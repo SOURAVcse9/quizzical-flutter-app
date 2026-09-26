@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/category.dart';
@@ -20,8 +21,37 @@ class QuizAnswerRecord {
   });
 }
 
+/// Statistics per category: quizzes played, best score percentage, last score
+class CategoryStats {
+  final int categoryId;
+  final int quizzesPlayed;
+  final int bestScore;
+  final int lastScore;
+
+  const CategoryStats({
+    required this.categoryId,
+    this.quizzesPlayed = 0,
+    this.bestScore = 0,
+    this.lastScore = 0,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'categoryId': categoryId,
+    'quizzesPlayed': quizzesPlayed,
+    'bestScore': bestScore,
+    'lastScore': lastScore,
+  };
+
+  factory CategoryStats.fromJson(Map<String, dynamic> json) => CategoryStats(
+    categoryId: json['categoryId'] as int? ?? 0,
+    quizzesPlayed: json['quizzesPlayed'] as int? ?? 0,
+    bestScore: json['bestScore'] as int? ?? 0,
+    lastScore: json['lastScore'] as int? ?? 0,
+  );
+}
+
 /// Central state management for Quizzical application with SharedPreferences persistence,
-/// streak tracking, best score memory, and exam-level features.
+/// favorites, recently played, category stats, daily challenge, streak tracking, and exam features.
 class QuizProvider extends ChangeNotifier {
   final TriviaService _triviaService = TriviaService();
 
@@ -29,6 +59,20 @@ class QuizProvider extends ChangeNotifier {
   String _userName = 'Your_Name';
   int _bestScorePercentage = 0;
   int? _lastPlayedCategoryId;
+
+  // Favorites & Recently Played
+  Set<int> _favoriteCategoryIds = {};
+  List<int> _recentlyPlayedCategoryIds = [];
+
+  // Category Personal Stats (categoryId -> CategoryStats)
+  Map<int, CategoryStats> _categoryStats = {};
+
+  // Daily Streak & Challenge
+  int _dailyStreak = 1;
+  String _lastStreakDate = '';
+  bool _dailyChallengeCompletedToday = false;
+  int? _dailyChallengeScore;
+  bool _isDailyChallengeActive = false;
 
   // Category State
   List<Category> _categories = [];
@@ -69,6 +113,13 @@ class QuizProvider extends ChangeNotifier {
   String get userName => _userName;
   int get bestScorePercentage => _bestScorePercentage;
   int? get lastPlayedCategoryId => _lastPlayedCategoryId;
+
+  Set<int> get favoriteCategoryIds => Set.unmodifiable(_favoriteCategoryIds);
+  List<int> get recentlyPlayedCategoryIds => List.unmodifiable(_recentlyPlayedCategoryIds);
+  int get dailyStreak => _dailyStreak;
+  bool get isDailyChallengeCompletedToday => _dailyChallengeCompletedToday;
+  int? get dailyChallengeScore => _dailyChallengeScore;
+  bool get isDailyChallengeActive => _isDailyChallengeActive;
 
   List<Category> get categories => _categories;
   bool get isLoadingCategories => _isLoadingCategories;
@@ -115,6 +166,48 @@ class QuizProvider extends ChangeNotifier {
     return ((_correctAnswers / _questions.length) * 100).round();
   }
 
+  // --- Favorites & Category Stats Methods ---
+  bool isFavorite(int categoryId) => _favoriteCategoryIds.contains(categoryId);
+
+  Future<void> toggleFavorite(int categoryId) async {
+    if (_favoriteCategoryIds.contains(categoryId)) {
+      _favoriteCategoryIds.remove(categoryId);
+    } else {
+      _favoriteCategoryIds.add(categoryId);
+    }
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        'favorite_categories',
+        _favoriteCategoryIds.map((id) => id.toString()).toList(),
+      );
+    } catch (_) {}
+  }
+
+  CategoryStats getCategoryStats(int categoryId) {
+    return _categoryStats[categoryId] ?? CategoryStats(categoryId: categoryId);
+  }
+
+  /// Deterministic Daily Challenge calculation for the current day
+  Category? getTodaysChallengeCategory() {
+    if (_categories.isEmpty) return null;
+    final now = DateTime.now();
+    final dayIndex = (now.year * 1000 + now.month * 50 + now.day) % _categories.length;
+    return _categories[dayIndex];
+  }
+
+  Future<bool> startDailyChallenge() async {
+    final cat = getTodaysChallengeCategory();
+    if (cat == null) return false;
+    _selectedCategory = cat;
+    _numberOfQuestions = 10;
+    _difficulty = 'Medium';
+    _questionType = 'multiple';
+    _isDailyChallengeActive = true;
+    return startQuiz();
+  }
+
   // --- Preferences Persistence ---
   Future<void> _loadPreferences() async {
     try {
@@ -125,9 +218,43 @@ class QuizProvider extends ChangeNotifier {
       _numberOfQuestions = prefs.getInt('saved_amount') ?? 10;
       _difficulty = prefs.getString('saved_difficulty') ?? 'Any Difficulty';
       _questionType = prefs.getString('saved_type') ?? 'multiple';
+
+      // Load favorites
+      final favList = prefs.getStringList('favorite_categories');
+      if (favList != null) {
+        _favoriteCategoryIds = favList.map((id) => int.tryParse(id) ?? 0).where((id) => id > 0).toSet();
+      }
+
+      // Load recently played
+      final recentList = prefs.getStringList('recently_played_categories');
+      if (recentList != null) {
+        _recentlyPlayedCategoryIds = recentList.map((id) => int.tryParse(id) ?? 0).where((id) => id > 0).toList();
+      }
+
+      // Load category stats
+      final statsString = prefs.getString('category_stats_map');
+      if (statsString != null) {
+        final decoded = json.decode(statsString) as Map<String, dynamic>;
+        _categoryStats = decoded.map(
+          (k, v) => MapEntry(int.parse(k), CategoryStats.fromJson(v as Map<String, dynamic>)),
+        );
+      }
+
+      // Load daily streak & challenge
+      _dailyStreak = prefs.getInt('daily_streak_count') ?? 1;
+      _lastStreakDate = prefs.getString('last_streak_date') ?? '';
+      final todayStr = _formatDate(DateTime.now());
+      final lastChallengeDate = prefs.getString('last_challenge_date') ?? '';
+      if (lastChallengeDate == todayStr) {
+        _dailyChallengeCompletedToday = true;
+        _dailyChallengeScore = prefs.getInt('daily_challenge_score');
+      }
+
       notifyListeners();
     } catch (_) {}
   }
+
+  String _formatDate(DateTime dt) => '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
   Future<void> setUserName(String name) async {
     _userName = name.trim().isEmpty ? 'Your_Name' : name.trim();
@@ -160,6 +287,68 @@ class QuizProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _recordQuizCompleted(int finalScore) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final todayStr = _formatDate(now);
+
+      // Streak update
+      if (_lastStreakDate != todayStr) {
+        final yesterday = now.subtract(const Duration(days: 1));
+        final yesterdayStr = _formatDate(yesterday);
+        if (_lastStreakDate == yesterdayStr) {
+          _dailyStreak++;
+        } else if (_lastStreakDate.isNotEmpty) {
+          _dailyStreak = 1;
+        }
+        _lastStreakDate = todayStr;
+        await prefs.setInt('daily_streak_count', _dailyStreak);
+        await prefs.setString('last_streak_date', _lastStreakDate);
+      }
+
+      // Category Stats & Recently Played update
+      if (_selectedCategory != null) {
+        final catId = _selectedCategory!.id;
+        final existing = _categoryStats[catId];
+        final newBest = (existing != null && existing.bestScore > finalScore)
+            ? existing.bestScore
+            : finalScore;
+        _categoryStats[catId] = CategoryStats(
+          categoryId: catId,
+          quizzesPlayed: (existing?.quizzesPlayed ?? 0) + 1,
+          bestScore: newBest,
+          lastScore: finalScore,
+        );
+
+        // Save category stats map
+        final encoded = json.encode(
+          _categoryStats.map((k, v) => MapEntry(k.toString(), v.toJson())),
+        );
+        await prefs.setString('category_stats_map', encoded);
+
+        // Update recently played
+        _recentlyPlayedCategoryIds.remove(catId);
+        _recentlyPlayedCategoryIds.insert(0, catId);
+        if (_recentlyPlayedCategoryIds.length > 5) {
+          _recentlyPlayedCategoryIds = _recentlyPlayedCategoryIds.sublist(0, 5);
+        }
+        await prefs.setStringList(
+          'recently_played_categories',
+          _recentlyPlayedCategoryIds.map((id) => id.toString()).toList(),
+        );
+      }
+
+      // Daily Challenge update
+      if (_isDailyChallengeActive) {
+        _dailyChallengeCompletedToday = true;
+        _dailyChallengeScore = finalScore;
+        await prefs.setString('last_challenge_date', todayStr);
+        await prefs.setInt('daily_challenge_score', finalScore);
+      }
+    } catch (_) {}
+  }
+
   // --- Category Actions ---
 
   Future<void> fetchCategories({bool forceRefresh = false}) async {
@@ -183,6 +372,7 @@ class QuizProvider extends ChangeNotifier {
   void setSelectedCategory(Category category) {
     _selectedCategory = category;
     _lastPlayedCategoryId = category.id;
+    _isDailyChallengeActive = false;
     _saveConfigPreferences();
     notifyListeners();
   }
@@ -214,25 +404,30 @@ class QuizProvider extends ChangeNotifier {
     _questionsError = null;
     _questions = [];
     _currentQuestionIndex = 0;
+    _selectedAnswer = null;
+    _isAnswerSubmitted = false;
     _correctAnswers = 0;
     _currentStreak = 0;
     _bestStreakInSession = 0;
-    _selectedAnswer = null;
-    _isAnswerSubmitted = false;
     _totalTimeSpentSeconds = 0;
     _answerRecords.clear();
     _cancelTimer();
     notifyListeners();
 
     try {
-      _questions = await _triviaService.fetchQuestions(
+      final categoryId = _selectedCategory?.id;
+      final fetchedQuestions = await _triviaService.fetchQuestions(
         amount: _numberOfQuestions,
-        categoryId: _selectedCategory?.id,
+        categoryId: categoryId,
         difficulty: _difficulty,
         type: _questionType,
       );
 
-      _questionsError = null;
+      if (fetchedQuestions.isEmpty) {
+        throw Exception('No questions returned for the selected options.');
+      }
+
+      _questions = fetchedQuestions;
       _isLoadingQuestions = false;
       _startQuestionTimer();
       notifyListeners();
@@ -245,12 +440,17 @@ class QuizProvider extends ChangeNotifier {
     }
   }
 
-  void selectAnswer(String answer) {
+  void selectAnswer(String answer) => submitAnswer(answer);
+
+  void submitAnswer(String answer) {
     if (_isAnswerSubmitted || currentQuestion == null) return;
 
     _cancelTimer();
-    _selectedAnswer = answer;
     _isAnswerSubmitted = true;
+    _selectedAnswer = answer;
+
+    final spent = questionDuration - _remainingSeconds;
+    _totalTimeSpentSeconds += spent;
 
     final isCorrect = answer == currentQuestion!.correctAnswer;
     if (isCorrect) {
@@ -263,15 +463,12 @@ class QuizProvider extends ChangeNotifier {
       _currentStreak = 0;
     }
 
-    final timeSpent = questionDuration - _remainingSeconds;
-    _totalTimeSpentSeconds += timeSpent;
-
     _answerRecords.add(
       QuizAnswerRecord(
         question: currentQuestion!,
         selectedAnswer: answer,
         isCorrect: isCorrect,
-        timeSpentSeconds: timeSpent,
+        timeSpentSeconds: spent,
       ),
     );
 
@@ -288,7 +485,9 @@ class QuizProvider extends ChangeNotifier {
       return true;
     } else {
       _cancelTimer();
-      _saveBestScore(scorePercentage);
+      final finalScore = scorePercentage;
+      _saveBestScore(finalScore);
+      _recordQuizCompleted(finalScore);
       notifyListeners();
       return false;
     }
@@ -312,6 +511,7 @@ class QuizProvider extends ChangeNotifier {
   void resetAll() {
     _cancelTimer();
     _selectedCategory = null;
+    _isDailyChallengeActive = false;
     _questions = [];
     _currentQuestionIndex = 0;
     _selectedAnswer = null;
@@ -339,7 +539,7 @@ class QuizProvider extends ChangeNotifier {
         if (!_isAnswerSubmitted && currentQuestion != null) {
           _isAnswerSubmitted = true;
           _selectedAnswer = '__timeout__';
-          _currentStreak = 0; // Reset streak on timeout
+          _currentStreak = 0;
           _totalTimeSpentSeconds += questionDuration;
           _answerRecords.add(
             QuizAnswerRecord(

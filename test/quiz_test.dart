@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:quizzical/models/category.dart';
 import 'package:quizzical/models/question.dart';
 import 'package:quizzical/providers/quiz_provider.dart';
+import 'package:quizzical/utils/category_helper.dart';
 import 'package:quizzical/utils/html_decoder.dart';
 
 void main() {
@@ -45,6 +46,42 @@ void main() {
       expect(question.allAnswers.contains('Paris'), true);
       expect(question.allAnswers.contains('London'), true);
     });
+
+    test('CategoryStats serialization works properly', () {
+      const stats = CategoryStats(
+        categoryId: 9,
+        quizzesPlayed: 3,
+        bestScore: 90,
+        lastScore: 80,
+      );
+      final json = stats.toJson();
+      final parsed = CategoryStats.fromJson(json);
+
+      expect(parsed.categoryId, 9);
+      expect(parsed.quizzesPlayed, 3);
+      expect(parsed.bestScore, 90);
+      expect(parsed.lastScore, 80);
+    });
+  });
+
+  group('Category 3D Asset Uniqueness & Validation Tests', () {
+    test('assertUniqueCategoryAssets verifies 100% unique 3D assets for all 24 categories', () {
+      expect(CategoryHelper.assertUniqueCategoryAssets(), true);
+    });
+
+    test('All 24 OpenTDB category IDs (9-32) map to distinct assets', () {
+      final seenAssets = <String>{};
+      for (int id = 9; id <= 32; id++) {
+        final visual = CategoryHelper.getVisual(id, 'Category $id');
+        expect(
+          seenAssets.contains(visual.imagePath),
+          false,
+          reason: 'Duplicate asset ${visual.imagePath} found for category ID $id',
+        );
+        seenAssets.add(visual.imagePath);
+      }
+      expect(seenAssets.length, 24);
+    });
   });
 
   group('QuizProvider Logic & Feature Tests', () {
@@ -61,6 +98,16 @@ void main() {
 
       provider.setUserName('John Doe');
       expect(provider.userName, 'John Doe');
+    });
+
+    test('Favorites toggling works properly', () async {
+      final provider = QuizProvider();
+
+      expect(provider.isFavorite(9), false);
+      await provider.toggleFavorite(9);
+      expect(provider.isFavorite(9), true);
+      await provider.toggleFavorite(9);
+      expect(provider.isFavorite(9), false);
     });
   });
 }
