@@ -1,59 +1,47 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-Thumbs.db
+# ==========================================
+# Flutter & Dart Production Gitignore
+# ==========================================
 
-# IntelliJ / Android Studio
-*.iml
-*.ipr
-*.iws
-.idea/
-.gradle/
-captures/
-.externalNativeBuild/
-
-# Visual Studio Code
-.vscode/
-
-# Flutter / Dart / Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter/Dart Build & Tooling
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
 .pub-cache/
 .pub/
-/build/
 build/
+/build/
+**/build/
 /coverage/
+**/doc/api/
+.widget_preview/
+**/ios/Flutter/.last_build_id
 
 # Symbolication & Obfuscation
 app.*.symbols
 app.*.map.json
 
-# Android build outputs & local secrets
+# ==========================================
+# Android
+# ==========================================
+.gradle/
+android/.gradle/
+**/android/.gradle/
+captures/
+.externalNativeBuild/
+android/local.properties
 /android/app/debug
 /android/app/profile
 /android/app/release
-android/local.properties
-android/.gradle/
+**/android/app/release/
 *.apk
 *.aab
 *.keystore
 *.jks
 
-# iOS build outputs & CocoaPods
+# ==========================================
+# iOS & macOS
+# ==========================================
 **/ios/Pods/
 **/ios/.symlinks/
 **/ios/Flutter/Flutter.framework
@@ -62,16 +50,71 @@ android/.gradle/
 **/ios/Flutter/app.flx
 **/ios/Flutter/flutter_assets/
 **/ios/ServiceDefinitions.json
+DerivedData/
+*.mode1v3
+*.mode2v3
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+xcuserdata/
 
-# Windows / Linux / macOS Desktop
+# ==========================================
+# Desktop Platforms (Windows / Linux / macOS)
+# ==========================================
 **/windows/flutter/ephemeral/
 **/linux/flutter/ephemeral/
 **/macos/Flutter/ephemeral/
 
-# Secrets / Environment
+# ==========================================
+# IDEs & Editors
+# ==========================================
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Eclipse
+.metadata/
+.classpath
+.project
+.settings/
+
+# ==========================================
+# OS & Miscellaneous
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.class
+*.log
+*.pyc
+*.pyo
+__pycache__/
+*.swp
+*.bak
+*~
+.atom/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+
+# ==========================================
+# Secrets & Environment
+# ==========================================
 .env
 .env.*
 *.key
-
-# Widget preview
-.widget_preview/
+*.pem
