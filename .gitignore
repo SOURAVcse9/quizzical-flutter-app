@@ -116,5 +116,11 @@ __pycache__/
 # ==========================================
 .env
 .env.*
+.envrc
 *.key
 *.pem
+*.p12
+*.mobileprovision
+key.properties
+android/key.properties
+local.properties
