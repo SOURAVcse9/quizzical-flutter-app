@@ -102,6 +102,12 @@ Thumbs.db
 *.pyc
 *.pyo
 __pycache__/
+.venv/
+venv/
+env/
+*.mp4
+*.mov
+*.avi
 *.swp
 *.bak
 *~
